@@ -46,6 +46,44 @@ body.focus-mode .focus-dimmable:focus-within {
   opacity: 1;
 }
 
+/* Focus mode: dims everything except what's being read/hovered */
+body.focus-mode .reading-content {
+  position: relative;
+}
+
+body.focus-mode .reading-content span {
+  opacity: 0.25;
+  transition: opacity 0.2s ease;
+}
+
+body.focus-mode .reading-content span:hover,
+body.focus-mode .reading-content span.focus-active {
+  opacity: 1;
+}
+
+/* Focus mode: dim non-essential page elements */
+body.focus-mode nav,
+body.focus-mode .sticky,
+body.focus-mode footer {
+  opacity: 0.3;
+  transition: opacity 0.3s ease;
+}
+
+body.focus-mode nav:hover,
+body.focus-mode .sticky:hover {
+  opacity: 1;
+}
+
+/* Focus mode vignette - darken edges to direct attention */
+body.focus-mode::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9000;
+  box-shadow: inset 0 0 200px 60px rgba(0, 0, 0, 0.5);
+}
+
 /* Reading content - respects accessibility settings */
 .reading-content {
   font-size: var(--a11y-font-size);
@@ -54,6 +92,18 @@ body.focus-mode .focus-dimmable:focus-within {
   line-height: var(--a11y-line-height);
   max-width: 65ch;
   transition: all 0.3s ease;
+}
+
+/* Apply line-height globally when changed from accessibility toolbar */
+body p,
+body span,
+body div,
+body li,
+body td,
+body th,
+body textarea,
+body .reading-content span {
+  line-height: var(--a11y-line-height);
 }
 
 /* Reading ruler - horizontal highlight bar */

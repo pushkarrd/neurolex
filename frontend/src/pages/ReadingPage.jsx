@@ -7,7 +7,7 @@ import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import {
     BookOpen, Upload, Play, Pause, ArrowLeft,
-    Volume2, VolumeX, Type, Eye
+    Volume2, VolumeX, Type, Eye, FileText, Loader2, SplitSquareHorizontal
 } from 'lucide-react';
 import useDyslexiaStore from '../stores/dyslexiaStore';
 
@@ -18,10 +18,16 @@ export default function ReadingPage() {
     const [displayMode, setDisplayMode] = useState('input'); // input | reading
     const [isSpeaking, setIsSpeaking] = useState(false);
     const [highlightedWordIndex, setHighlightedWordIndex] = useState(-1);
+    const [speechRate, setSpeechRate] = useState(1);
+    const [isExtractingPDF, setIsExtractingPDF] = useState(false);
+    const [uploadError, setUploadError] = useState('');
+    const [syllableMode, setSyllableMode] = useState(false);
     const textDisplayRef = useRef(null);
     const utteranceRef = useRef(null);
 
-    const { dyslexicFont, fontSize, letterSpacing, wordSpacing, lineHeight } = useDyslexiaStore();
+    const { dyslexicFont, fontSize, letterSpacing, wordSpacing, lineHeight, focusMode } = useDyslexiaStore();
+
+    const speedOptions = [0.5, 0.8, 1, 1.2, 1.5, 2];
 
     const sampleTexts = [
         {
@@ -45,15 +51,66 @@ export default function ReadingPage() {
         }
     };
 
-    const handleFileUpload = (e) => {
+    const handleFileUpload = async (e) => {
         const file = e.target.files[0];
-        if (file && file.type === 'text/plain') {
+        if (!file) return;
+        setUploadError('');
+
+        if (file.type === 'application/pdf') {
+            setIsExtractingPDF(true);
+            try {
+                const pdfjsLib = await import('pdfjs-dist');
+                pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).href;
+
+                const arrayBuffer = await file.arrayBuffer();
+                const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+                let fullText = '';
+
+                for (let i = 1; i <= pdf.numPages; i++) {
+                    const page = await pdf.getPage(i);
+                    const content = await page.getTextContent();
+                    // Reconstruct text preserving line structure
+                    const items = content.items;
+                    let lastY = null;
+                    let lineText = '';
+                    for (const item of items) {
+                        if (lastY !== null && Math.abs(item.transform[5] - lastY) > 2) {
+                            fullText += lineText.trim() + '\n';
+                            lineText = '';
+                        }
+                        lineText += item.str + ' ';
+                        lastY = item.transform[5];
+                    }
+                    if (lineText.trim()) fullText += lineText.trim() + '\n';
+                    fullText += '\n';
+                }
+
+                const extracted = fullText.trim();
+                if (!extracted) {
+                    setUploadError('Could not extract text from this PDF. It may be scanned/image-based.');
+                } else {
+                    setText(extracted);
+                }
+            } catch (err) {
+                console.error('PDF extraction error:', err);
+                setUploadError('Failed to read PDF. Please try a different file or paste text manually.');
+            } finally {
+                setIsExtractingPDF(false);
+            }
+        } else if (file.type === 'text/plain' || file.name.endsWith('.txt')) {
             const reader = new FileReader();
             reader.onload = (ev) => {
                 setText(ev.target.result);
             };
+            reader.onerror = () => {
+                setUploadError('Failed to read the text file.');
+            };
             reader.readAsText(file);
+        } else {
+            setUploadError('Unsupported file type. Please upload a .pdf or .txt file.');
         }
+        // Reset the input so re-uploading the same file triggers onChange
+        e.target.value = '';
     };
 
     const handleSpeak = () => {
@@ -65,7 +122,7 @@ export default function ReadingPage() {
         }
 
         const utterance = new SpeechSynthesisUtterance(text);
-        utterance.rate = 0.85;
+        utterance.rate = speechRate;
         utterance.pitch = 1.0;
 
         const words = text.split(/\s+/);
@@ -89,6 +146,93 @@ export default function ReadingPage() {
     };
 
     const words = text.split(/\s+/).filter(w => w.length > 0);
+
+    // Syllable breakdown: only for hard/long words (6+ letters)
+    const breakIntoSyllables = (word) => {
+        // Strip punctuation for analysis, keep for display
+        const punctMatch = word.match(/^([^a-zA-Z]*)(.*?)([^a-zA-Z]*)$/);
+        if (!punctMatch) return word;
+        const [, leadPunct, core, trailPunct] = punctMatch;
+        if (core.length < 6) return word; // Only break long words
+
+        const lower = core.toLowerCase();
+        const syllables = [];
+        let current = '';
+        const vowels = 'aeiouy';
+        const isVowel = (c) => vowels.includes(c);
+
+        for (let i = 0; i < core.length; i++) {
+            current += core[i];
+
+            if (i < core.length - 1) {
+                const curIsVowel = isVowel(lower[i]);
+                const nextIsVowel = isVowel(lower[i + 1]);
+
+                // Split after a vowel followed by a consonant that starts a new syllable
+                if (curIsVowel && !nextIsVowel && i + 2 < core.length && isVowel(lower[i + 2])) {
+                    syllables.push(current);
+                    current = '';
+                }
+                // Split between two consonants (if not a common blend)
+                else if (!curIsVowel && !nextIsVowel && current.length > 1 && i + 1 < core.length - 1) {
+                    const blend = lower[i] + lower[i + 1];
+                    const commonBlends = ['bl', 'br', 'ch', 'cl', 'cr', 'dr', 'fl', 'fr', 'gl', 'gr', 'ph', 'pl', 'pr', 'sc', 'sh', 'sk', 'sl', 'sm', 'sn', 'sp', 'st', 'str', 'sw', 'th', 'tr', 'tw', 'wh', 'wr'];
+                    if (!commonBlends.includes(blend)) {
+                        syllables.push(current);
+                        current = '';
+                    }
+                }
+                // Split between a consonant and vowel pair after enough chars
+                else if (!curIsVowel && nextIsVowel && current.length > 2) {
+                    // Move last consonant to next syllable
+                    const lastChar = current[current.length - 1];
+                    syllables.push(current.slice(0, -1));
+                    current = lastChar;
+                }
+            }
+        }
+        if (current) syllables.push(current);
+
+        // Only return syllable breakdown if we got multiple syllables
+        if (syllables.length <= 1) return word;
+        return leadPunct + syllables.join('·') + trailPunct;
+    };
+
+    const renderWord = (word, i) => {
+        const isHighlighted = highlightedWordIndex === i;
+        if (syllableMode && word.replace(/[^a-zA-Z]/g, '').length >= 6) {
+            const broken = breakIntoSyllables(word);
+            const parts = broken.split('·');
+            if (parts.length > 1) {
+                return (
+                    <span
+                        key={i}
+                        className={`inline transition-colors duration-150 ${isHighlighted ? 'bg-indigo-500/30 text-white rounded px-1 focus-active' : 'text-white/90'
+                            }`}
+                    >
+                        {parts.map((part, pi) => (
+                            <span key={pi}>
+                                {part}
+                                {pi < parts.length - 1 && (
+                                    <span className="text-indigo-400 font-bold mx-[1px] text-[0.7em]">·</span>
+                                )}
+                            </span>
+                        ))}
+                        {' '}
+                    </span>
+                );
+            }
+        }
+        return (
+            <span
+                key={i}
+                className={`inline transition-colors duration-150 ${isHighlighted ? 'bg-indigo-500/30 text-white rounded px-1 focus-active' : 'text-white/90'
+                    }`}
+            >
+                {word}{' '}
+            </span>
+        );
+    };
 
     return (
         <div className="min-h-screen bg-gradient-to-br from-[#0a0a1a] via-[#0f0f2e] to-[#1a0a2e] text-white">
@@ -146,7 +290,7 @@ export default function ReadingPage() {
                         </div>
 
                         {/* File upload */}
-                        <div className="flex items-center gap-4">
+                        <div className="flex items-center gap-4 flex-wrap">
                             <label className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 cursor-pointer transition-colors">
                                 <Upload size={18} />
                                 <span className="text-sm">Upload .txt file</span>
@@ -157,8 +301,29 @@ export default function ReadingPage() {
                                     className="hidden"
                                 />
                             </label>
+                            <label className="flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-500/10 border border-indigo-500/20 hover:bg-indigo-500/20 cursor-pointer transition-colors">
+                                <FileText size={18} className="text-indigo-400" />
+                                <span className="text-sm">Upload PDF</span>
+                                <input
+                                    type="file"
+                                    accept=".pdf"
+                                    onChange={handleFileUpload}
+                                    className="hidden"
+                                />
+                            </label>
+                            {isExtractingPDF && (
+                                <div className="flex items-center gap-2 text-indigo-400 text-sm">
+                                    <Loader2 size={16} className="animate-spin" />
+                                    Extracting text from PDF...
+                                </div>
+                            )}
                             <span className="text-white/40 text-sm">or pick a sample →</span>
                         </div>
+                        {uploadError && (
+                            <div className="text-red-400 text-sm bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-2">
+                                {uploadError}
+                            </div>
+                        )}
 
                         {/* Sample texts */}
                         <div>
@@ -222,6 +387,62 @@ export default function ReadingPage() {
                                     {isSpeaking ? <VolumeX size={18} /> : <Volume2 size={18} />}
                                     <span className="text-sm">{isSpeaking ? 'Stop' : 'Read Aloud'}</span>
                                 </button>
+
+                                {/* Speed control */}
+                                <div className="flex items-center gap-1">
+                                    {speedOptions.map((speed) => (
+                                        <button
+                                            key={speed}
+                                            onClick={() => {
+                                                setSpeechRate(speed);
+                                                // If currently speaking, restart with new speed
+                                                if (isSpeaking) {
+                                                    window.speechSynthesis.cancel();
+                                                    setIsSpeaking(false);
+                                                    setHighlightedWordIndex(-1);
+                                                    setTimeout(() => {
+                                                        const utterance = new SpeechSynthesisUtterance(text);
+                                                        utterance.rate = speed;
+                                                        utterance.pitch = 1.0;
+                                                        const w = text.split(/\s+/);
+                                                        let wi = 0;
+                                                        utterance.onboundary = (ev) => { if (ev.name === 'word') { setHighlightedWordIndex(wi); wi++; } };
+                                                        utterance.onend = () => { setIsSpeaking(false); setHighlightedWordIndex(-1); };
+                                                        utteranceRef.current = utterance;
+                                                        window.speechSynthesis.speak(utterance);
+                                                        setIsSpeaking(true);
+                                                    }, 50);
+                                                }
+                                            }}
+                                            className="px-2 py-1 rounded text-xs font-medium transition-all"
+                                            style={{
+                                                background: speechRate === speed ? 'rgba(99, 102, 241, 0.4)' : 'rgba(255,255,255,0.05)',
+                                                border: speechRate === speed ? '1px solid rgba(99, 102, 241, 0.6)' : '1px solid rgba(255,255,255,0.1)',
+                                                color: speechRate === speed ? '#a5b4fc' : 'rgba(255,255,255,0.5)',
+                                                minWidth: '36px',
+                                                minHeight: '32px',
+                                            }}
+                                        >
+                                            {speed}x
+                                        </button>
+                                    ))}
+                                </div>
+
+                                {/* Syllable breakdown toggle */}
+                                <button
+                                    onClick={() => setSyllableMode(!syllableMode)}
+                                    className="flex items-center gap-2 px-3 py-2 rounded-lg transition-colors text-sm"
+                                    style={{
+                                        background: syllableMode ? 'rgba(168, 85, 247, 0.25)' : 'rgba(255,255,255,0.05)',
+                                        border: `1px solid ${syllableMode ? 'rgba(168, 85, 247, 0.4)' : 'rgba(255,255,255,0.1)'}`,
+                                        color: syllableMode ? '#c084fc' : 'rgba(255,255,255,0.5)',
+                                        minHeight: '32px',
+                                    }}
+                                    title="Break hard words into syllables"
+                                >
+                                    <SplitSquareHorizontal size={16} />
+                                    <span className="text-xs">{syllableMode ? 'Syllables ON' : 'Break Down'}</span>
+                                </button>
                             </div>
                         </div>
 
@@ -238,17 +459,7 @@ export default function ReadingPage() {
                                 maxWidth: '100%',
                             }}
                         >
-                            {words.map((word, i) => (
-                                <span
-                                    key={i}
-                                    className={`inline transition-colors duration-150 ${highlightedWordIndex === i
-                                            ? 'bg-indigo-500/30 text-white rounded px-1'
-                                            : 'text-white/90'
-                                        }`}
-                                >
-                                    {word}{' '}
-                                </span>
-                            ))}
+                            {words.map((word, i) => renderWord(word, i))}
                         </div>
 
                         {/* Stats */}

@@ -14,6 +14,9 @@ from dotenv import load_dotenv
 import requests
 import time
 import json
+import base64
+from io import BytesIO
+from PIL import Image, ImageEnhance, ImageFilter
 
 # Load environment variables
 load_dotenv()
@@ -488,10 +491,16 @@ class RecommendationRequest(BaseModel):
 @app.post("/api/handwriting/analyze")
 async def analyze_handwriting(file: UploadFile = File(...), userId: str = "anonymous"):
     """
-    Analyze handwriting image for dyslexia-related errors using Gemini Vision AI
+    Analyze handwriting image for dyslexia-related errors using Gemini Vision AI.
+    Returns detailed scoring, extracted text, error highlights, and improvement tips.
     """
     try:
         file_content = await file.read()
+        
+        # Validate file size (50 MB limit)
+        if len(file_content) > 50 * 1024 * 1024:
+            raise HTTPException(status_code=400, detail="File size exceeds 50 MB limit.")
+        
         base64_image = base64.b64encode(file_content).decode('utf-8')
         
         # Determine mime type
@@ -500,24 +509,25 @@ async def analyze_handwriting(file: UploadFile = File(...), userId: str = "anony
         url = f"{GEMINI_API_BASE}/{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}"
         headers = {"Content-Type": "application/json"}
         
-        system_prompt = """You are a dyslexia handwriting analysis expert. Analyze handwritten text in images and detect common dyslexia-related errors.
+        system_prompt = """You are a dyslexia handwriting analyst. Analyze the handwriting image and respond with ONLY a JSON object (no markdown, no code fences, no extra text).
 
-IMPORTANT: You must respond ONLY with valid JSON in exactly this format, no other text:
-{
-  "score": <number 0-100>,
-  "summary": "<brief overall assessment>",
-  "errors": [
-    {
-      "type": "<Letter Reversal|Spacing Issue|Formation Error|Alignment Issue|Mirror Writing>",
-      "severity": "<high|medium|low>",
-      "description": "<what was found>",
-      "suggestion": "<how to improve>"
-    }
-  ],
-  "recommendations": ["<practice tip 1>", "<practice tip 2>", "<practice tip 3>"]
-}"""
+Instructions:
+1. Extract all text from the image as "extractedText" (keep it concise — max 300 chars, truncate with ... if longer)
+2. Score each category 0-100 independently (vary scores based on actual quality):
+   - letterFormation: letter shapes, b/d p/q reversals
+   - spacing: letter/word/line spacing consistency
+   - alignment: baseline, slant uniformity
+   - spelling: correct spelling (flag every error)
+   - sizing: letter size consistency
+   - legibility: overall readability
+3. Overall score = weighted avg: letterFormation 25%, spacing 15%, alignment 15%, spelling 25%, sizing 10%, legibility 10%
+4. List errors (max 8 most important) and spelling errors (max 10)
+5. Keep all descriptions SHORT (under 50 chars each)
 
-        user_prompt = "Analyze this handwriting for dyslexia-related errors. Check for: letter reversals (b/d, p/q, m/w), spacing problems, incorrect letter formation, inconsistent alignment, mirror writing. Provide a score from 0-100 and list all detected issues with severity levels."
+JSON format — output ONLY this, nothing else:
+{"score":N,"extractedText":"...","summary":"...","categoryScores":{"letterFormation":N,"spacing":N,"alignment":N,"spelling":N,"sizing":N,"legibility":N},"errors":[{"type":"...","severity":"high|medium|low","word":"...","correction":"...","description":"...","suggestion":"..."}],"spellingErrors":[{"wrong":"...","correct":"...","type":"misspelling|abbreviation|missing_letter|extra_letter|transposition"}],"strengths":["..."],"recommendations":[{"title":"...","description":"...","priority":"high|medium|low"}]}"""
+
+        user_prompt = """Analyze this handwriting. Extract text, score each category independently (NOT same scores), find errors. Keep descriptions SHORT. Output ONLY valid JSON, no markdown fences."""
 
         payload = {
             "contents": [
@@ -535,8 +545,9 @@ IMPORTANT: You must respond ONLY with valid JSON in exactly this format, no othe
                 }
             ],
             "generationConfig": {
-                "temperature": 0.3,
-                "maxOutputTokens": 1500
+                "temperature": 0.2,
+                "maxOutputTokens": 8192,
+                "responseMimeType": "application/json"
             }
         }
         
@@ -564,32 +575,107 @@ IMPORTANT: You must respond ONLY with valid JSON in exactly this format, no othe
         
         # Parse the JSON response
         try:
-            # Try to extract JSON from the response
-            json_start = result_text.find('{')
-            json_end = result_text.rfind('}') + 1
+            # Strip markdown code fences if present (```json ... ``` or ``` ... ```)
+            cleaned = result_text.strip()
+            if cleaned.startswith("```"):
+                # Remove opening fence (```json or ```)
+                first_newline = cleaned.index('\n')
+                cleaned = cleaned[first_newline + 1:]
+            if cleaned.endswith("```"):
+                cleaned = cleaned[:-3]
+            cleaned = cleaned.strip()
+            
+            # Try to extract JSON from the cleaned response
+            json_start = cleaned.find('{')
+            json_end = cleaned.rfind('}') + 1
             if json_start >= 0 and json_end > json_start:
-                result = json.loads(result_text[json_start:json_end])
+                json_str = cleaned[json_start:json_end]
             else:
-                result = json.loads(result_text)
-        except json.JSONDecodeError:
-            # Fallback structured response
-            result = {
-                "score": 70,
-                "summary": result_text[:200],
-                "errors": [
-                    {
-                        "type": "Analysis Note",
-                        "severity": "medium",
-                        "description": result_text[:300],
-                        "suggestion": "Review the detailed analysis and practice the identified areas."
-                    }
-                ],
-                "recommendations": [
-                    "Practice letter formation with tracing exercises",
-                    "Use lined paper to improve alignment",
-                    "Focus on commonly reversed letters"
-                ]
-            }
+                json_str = cleaned
+            
+            print(f"📝 Parsing JSON response ({len(json_str)} chars)...")
+            result = json.loads(json_str)
+            print(f"✅ Parsed successfully. Score from AI: {result.get('score', 'N/A')}")
+            
+            # Use AI's category scores directly — do NOT override with defaults
+            if "categoryScores" in result and isinstance(result["categoryScores"], dict):
+                cats = result["categoryScores"]
+                # Recompute the overall score from category scores for consistency
+                weights = {
+                    "letterFormation": 0.25, "spacing": 0.15, "alignment": 0.15,
+                    "spelling": 0.25, "sizing": 0.10, "legibility": 0.10
+                }
+                computed_score = sum(cats.get(k, cats.get(k, 50)) * w for k, w in weights.items())
+                result["score"] = round(computed_score)
+                print(f"📊 Category scores: {cats}")
+                print(f"📊 Computed weighted score: {result['score']}")
+            
+            # Only fill truly missing fields — do NOT overwrite AI-provided values
+            result.setdefault("extractedText", "")
+            result.setdefault("summary", "Analysis complete.")
+            if "categoryScores" not in result:
+                # Only use defaults if AI completely failed to provide category scores
+                result["categoryScores"] = {
+                    "letterFormation": result.get("score", 50),
+                    "spacing": result.get("score", 50),
+                    "alignment": result.get("score", 50),
+                    "spelling": result.get("score", 50),
+                    "sizing": result.get("score", 50),
+                    "legibility": result.get("score", 50),
+                }
+            result.setdefault("errors", [])
+            result.setdefault("spellingErrors", [])
+            result.setdefault("strengths", [])
+            result.setdefault("recommendations", [])
+            
+        except (json.JSONDecodeError, ValueError) as parse_err:
+            print(f"❌ JSON parse failed: {parse_err}")
+            print(f"❌ Raw response (first 500 chars): {result_text[:500]}")
+            
+            # Last resort: try a more aggressive cleanup
+            try:
+                import re as regex_module
+                # Find anything that looks like a JSON object
+                json_match = regex_module.search(r'\{[\s\S]*\}', result_text)
+                if json_match:
+                    fallback_json = json_match.group()
+                    # Remove any control characters
+                    fallback_json = regex_module.sub(r'[\x00-\x1f\x7f-\x9f]', ' ', fallback_json)
+                    result = json.loads(fallback_json)
+                    print(f"✅ Recovered JSON on second attempt. Score: {result.get('score', 'N/A')}")
+                    result.setdefault("extractedText", "")
+                    result.setdefault("summary", "Analysis complete.")
+                    result.setdefault("categoryScores", {})
+                    result.setdefault("errors", [])
+                    result.setdefault("spellingErrors", [])
+                    result.setdefault("strengths", [])
+                    result.setdefault("recommendations", [])
+                else:
+                    raise ValueError("No JSON object found in response")
+            except Exception:
+                # True fallback — but use extractedText from raw if possible
+                result = {
+                    "score": 0,
+                    "extractedText": "",
+                    "summary": "Analysis could not parse the AI response. Please try again with a clearer image.",
+                    "categoryScores": {
+                        "letterFormation": 0, "spacing": 0, "alignment": 0,
+                        "spelling": 0, "sizing": 0, "legibility": 0
+                    },
+                    "errors": [{
+                        "type": "Parse Error",
+                        "severity": "high",
+                        "word": "",
+                        "correction": "",
+                        "description": "The AI response could not be parsed. This usually means the image was unclear or the AI returned an unexpected format.",
+                        "suggestion": "Try uploading a clearer, well-lit photo of the handwriting."
+                    }],
+                    "spellingErrors": [],
+                    "strengths": [],
+                    "recommendations": [
+                        {"title": "Try again", "description": "Upload a clearer photo with good lighting and contrast.", "priority": "high"}
+                    ]
+                }
         
         # Save to Firestore
         try:
