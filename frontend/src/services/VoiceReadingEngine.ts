@@ -63,7 +63,13 @@ const WORD_HELP_COOLDOWN_MS = 5_000;
 const MAX_HELP_PER_WORD = 2;
 
 /** TTS speed for help pronunciation */
-const HELP_TTS_RATE = 0.5;
+const HELP_TTS_RATE = 0.75;
+
+/** Limit UI progress updates to avoid render thrash on long passages */
+const PROGRESS_EMIT_THROTTLE_MS = 70;
+
+/** Limit expensive pronunciation checks for interim tokens */
+const PRONUNCIATION_CHECK_THROTTLE_MS = 120;
 
 /** Font boost in px for the stuck word */
 const STUCK_FONT_BOOST_PX = 6;
@@ -145,17 +151,17 @@ function isHardWord(word: string): boolean {
         if (pattern.test(w)) return true;
     }
 
-    // Longer words (7+ letters) are more likely to be hard
-    if (w.length >= 7) return true;
+    // Treat only clearly complex longer words as hard to avoid over-triggering.
+    if (w.length >= 9) return true;
 
     // Words with unusual letter combinations (double vowels, uncommon clusters)
     if (/([aeiou]{3})|([^aeiou]{4})/.test(w)) return true;
 
-    // Words with 'x', 'z', 'q' are typically harder
-    if (/[xzq]/.test(w)) return true;
+    // Words with uncommon letters are often harder, but only if not short.
+    if (w.length >= 6 && /[xzq]/.test(w)) return true;
 
-    // 5-6 letter words: only if they have silent/tricky patterns (already checked above)
-    // Otherwise, skip them — they're usually manageable
+    // 5-8 letter words: only if they have silent/tricky patterns (already checked above).
+    // Otherwise, skip them to avoid helping easy/common words.
     return false;
 }
 
@@ -186,6 +192,8 @@ class VoiceReadingEngine {
 
     // Stats
     private wordsRead = 0;
+    private lastProgressEmitAt = 0;
+    private lastPronunciationCheckAt = 0;
 
     // ──────────── Public API ────────────
 
@@ -207,6 +215,8 @@ class VoiceReadingEngine {
         this.wordHelpCounts.clear();
         this.wordsRead = 0;
         this.currentStuckWord = null;
+        this.lastProgressEmitAt = 0;
+        this.lastPronunciationCheckAt = 0;
 
         // Initialise TTS (synchronous, instant)
         webSpeechTTSService.initialise();
@@ -319,10 +329,14 @@ class VoiceReadingEngine {
         if (matchedIndex === null || matchedIndex < 0) {
             if (this.currentWordIndex < this.passageWords.length) {
                 const expected = this.passageWords[this.currentWordIndex];
-                if (isHardWord(expected)) {
+                // Only run heavier scoring for final results or throttled interim updates.
+                const now = Date.now();
+                const canCheck = recognized.isFinal || (now - this.lastPronunciationCheckAt >= PRONUNCIATION_CHECK_THROTTLE_MS);
+                if (isHardWord(expected) && canCheck) {
+                    this.lastPronunciationCheckAt = now;
                     const score = pronunciationAnalyser.analyseWord(expected, recognized.word);
                     if (!score.isCorrect && score.score < 0.55) {
-                        this.triggerHelp(this.currentWordIndex, 'mispronounced', score, Date.now());
+                        this.triggerHelp(this.currentWordIndex, 'mispronounced', score, now);
                     }
                 }
             }
@@ -338,13 +352,23 @@ class VoiceReadingEngine {
             this.currentWordIndex = matchedIndex;
         }
 
+        // Emit progress for interim + final, throttled to keep highlighting smooth.
+        this.emitProgress(matchedIndex, targetWord, recognized.confidence, recognized.isFinal);
+
         // ===== Real-time pronunciation validation =====
-        const score = pronunciationAnalyser.analyseWord(targetWord, recognized.word);
         const now = Date.now();
+        let score: PronunciationScore | undefined;
+
+        // Avoid running pronunciation analysis on every interim token.
+        const shouldCheckPronunciation = recognized.isFinal || (now - this.lastPronunciationCheckAt >= PRONUNCIATION_CHECK_THROTTLE_MS);
+        if (shouldCheckPronunciation) {
+            this.lastPronunciationCheckAt = now;
+            score = pronunciationAnalyser.analyseWord(targetWord, recognized.word);
+        }
 
         // Rule 2: Mispronunciation — only for hard words (silent letters, long/complex)
         // Simple common words are skipped to avoid false positives from speech recognition.
-        if (!score.isCorrect && score.score < 0.50 && isHardWord(targetWord)) {
+        if (score && !score.isCorrect && score.score < 0.50 && isHardWord(targetWord)) {
             this.triggerHelp(matchedIndex, 'mispronounced', score, now);
             // Still count the final result for re-read tracking below
             if (!recognized.isFinal) return;
@@ -356,11 +380,6 @@ class VoiceReadingEngine {
         const prevCount = this.wordReadCounts.get(matchedIndex) || 0;
         this.wordReadCounts.set(matchedIndex, prevCount + 1);
         this.wordsRead++;
-
-        // Emit progress
-        for (const cb of this.progressListeners) {
-            cb({ wordIndex: matchedIndex, word: targetWord, confidence: recognized.confidence });
-        }
 
         // Rule 1: User re-reads the same word 2+ times — only for hard words
         if (prevCount + 1 >= REREAD_TRIGGER_COUNT && isHardWord(targetWord)) {
@@ -441,6 +460,16 @@ class VoiceReadingEngine {
         });
 
         this.emitState();
+    }
+
+    private emitProgress(wordIndex: number, word: string, confidence: number, isFinal: boolean): void {
+        const now = Date.now();
+        const shouldEmit = isFinal || (now - this.lastProgressEmitAt >= PROGRESS_EMIT_THROTTLE_MS);
+        if (!shouldEmit) return;
+        this.lastProgressEmitAt = now;
+        for (const cb of this.progressListeners) {
+            cb({ wordIndex, word, confidence });
+        }
     }
 
     // ──────────── Syllable Breakdown ────────────

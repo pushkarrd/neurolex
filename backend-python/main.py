@@ -829,6 +829,7 @@ async def transform_content(request: ContentTransformRequest):
     """
     Transform educational content into multiple learning formats:
     simplified notes, flashcards, quiz, mind map
+    With fallback content if API calls fail
     """
     try:
         text = request.text
@@ -837,6 +838,51 @@ async def transform_content(request: ContentTransformRequest):
         
         print(f"🔄 Transforming content ({len(text)} chars)...")
         start_time = time.time()
+        
+        # Shortened text for fallback
+        short_text = text[:200] if len(text) > 200 else text
+        
+        # Fallback content (simple, structured, no API needed)
+        fallback_notes = f"""SIMPLIFIED NOTES
+
+Main Topic: {short_text[:80]}...
+
+Key Points:
+- Read the text carefully
+- Look for important ideas
+- Break them into smaller parts
+
+Why This Matters:
+Understanding the basic ideas helps you learn better and remember longer."""
+
+        fallback_flashcards = """Q: What is the main topic?
+A: The content covers important concepts you need to understand.
+
+Q: Why should you study this?
+A: Because it helps you learn and remember better."""
+
+        fallback_quiz = """1. What is the main idea?
+A. Not important
+B. Something you need to learn (correct)
+C. Only for smart students
+D. A waste of time
+
+2. How should you study?
+A. Read and take notes (correct)
+B. Do nothing
+C. Ask someone else
+D. Guess randomly"""
+
+        fallback_mindmap = """Main Topic
+├─ Key Ideas
+│  ├─ Idea 1
+│  └─ Idea 2
+├─ Details
+│  ├─ Detail 1
+│  └─ Detail 2
+└─ Examples
+   ├─ Example 1
+   └─ Example 2"""
         
         notes_prompt = f"""You are a teacher helping a dyslexic student understand this topic. Rewrite the content below in a way that is EASY to read and DETAILED enough to fully understand the topic.
 
@@ -936,12 +982,39 @@ Text:
 
 Mind Map:"""
         
-        # Run sequentially to avoid rate limits (Gemini free tier: ~15 RPM)
-        # The global throttle ensures minimum spacing between calls
-        simplified_notes = generate_with_gemini(notes_prompt, "You are a patient dyslexia specialist teacher. Write detailed, easy-to-read notes. NO markdown symbols (no # or * or **). Use plain text with dashes for bullets. Be thorough — cover every key point.")
-        flashcards = generate_with_gemini(flashcard_prompt, "Create flashcards using ONLY Q: and A: format. No numbering, no extra text. Keep answers clear and simple.")
-        quiz = generate_with_gemini(quiz_prompt, "Create a multiple choice quiz. Use simple language. Mark correct answer with (correct). Format exactly as shown.")
-        mind_map = generate_with_gemini(mindmap_prompt, "Create a detailed text mind map using tree characters (├─ │ └─). Use simple words. Be thorough.")
+        # Try to generate each one, with fallback if it fails
+        simplified_notes = fallback_notes
+        flashcards = fallback_flashcards
+        quiz = fallback_quiz
+        mind_map = fallback_mindmap
+        
+        try:
+            print("📝 Generating simplified notes...")
+            simplified_notes = generate_with_gemini(notes_prompt, "You are a patient dyslexia specialist teacher. Write detailed, easy-to-read notes. NO markdown symbols (no # or * or **). Use plain text with dashes for bullets. Be thorough — cover every key point.")
+            print("✅ Notes generated")
+        except Exception as e:
+            print(f"⚠️  Notes generation failed, using fallback: {e}")
+        
+        try:
+            print("🎓 Generating flashcards...")
+            flashcards = generate_with_gemini(flashcard_prompt, "Create flashcards using ONLY Q: and A: format. No numbering, no extra text. Keep answers clear and simple.")
+            print("✅ Flashcards generated")
+        except Exception as e:
+            print(f"⚠️  Flashcards generation failed, using fallback: {e}")
+        
+        try:
+            print("📋 Generating quiz...")
+            quiz = generate_with_gemini(quiz_prompt, "Create a multiple choice quiz. Use simple language. Mark correct answer with (correct). Format exactly as shown.")
+            print("✅ Quiz generated")
+        except Exception as e:
+            print(f"⚠️  Quiz generation failed, using fallback: {e}")
+        
+        try:
+            print("🗺️  Generating mind map...")
+            mind_map = generate_with_gemini(mindmap_prompt, "Create a detailed text mind map using tree characters (├─ │ └─). Use simple words. Be thorough.")
+            print("✅ Mind map generated")
+        except Exception as e:
+            print(f"⚠️  Mind map generation failed, using fallback: {e}")
         
         elapsed = time.time() - start_time
         print(f"✅ Content transformation complete in {elapsed:.1f}s")

@@ -27,14 +27,14 @@ export interface RecognizedWord {
  * How far AHEAD of the cursor to look for the next word.
  * Keep small so common words ("the", "a", "is") don't skip ahead.
  */
-const FORWARD_WINDOW = 4;
+const FORWARD_WINDOW = 6;
 
 /**
  * How far BEHIND the cursor to look — only used to detect re-reads.
  * Matches behind the cursor are tagged as re-reads and do NOT move
  * the cursor backward, solving the "jumps to previous line" bug.
  */
-const BACKWARD_WINDOW = 3;
+const BACKWARD_WINDOW = 2;
 
 class SpeechRecognitionService {
     private recognition: SpeechRecognition | null = null;

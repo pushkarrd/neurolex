@@ -97,6 +97,8 @@ function ReadingPageInner() {
     const [stuckWord, setStuckWord] = useState(null); // { wordIndex, word, lineIndex, reason, syllables, phonetic }
     const [voiceCurrentWord, setVoiceCurrentWord] = useState(-1); // current word index from voice
     const [stuckWordSet, setStuckWordSet] = useState(new Set()); // all words that ever triggered help
+    const pendingVoiceWordRef = useRef(-1);
+    const voiceWordRafRef = useRef(null);
 
     // Gaze hooks (only active when gazeEnabled && displayMode === 'reading')
     const gazeReading = gazeEnabled && displayMode === 'reading';
@@ -366,7 +368,13 @@ function ReadingPageInner() {
 
                 // Listen for word progress (to track current reading position)
                 const unsubProgress = voiceReadingEngine.onWordProgress((event) => {
-                    setVoiceCurrentWord(event.wordIndex);
+                    pendingVoiceWordRef.current = event.wordIndex;
+                    if (!voiceWordRafRef.current) {
+                        voiceWordRafRef.current = requestAnimationFrame(() => {
+                            setVoiceCurrentWord(pendingVoiceWordRef.current);
+                            voiceWordRafRef.current = null;
+                        });
+                    }
                     // Clear stuck word when user progresses past it
                     setStuckWord(prev => {
                         if (prev && event.wordIndex > prev.wordIndex) return null;
@@ -387,6 +395,10 @@ function ReadingPageInner() {
 
         return () => {
             clearTimeout(timer);
+            if (voiceWordRafRef.current) {
+                cancelAnimationFrame(voiceWordRafRef.current);
+                voiceWordRafRef.current = null;
+            }
             voiceReadingEngine.stop();
             setVoiceReadingActive(false);
             setStuckWord(null);
@@ -1034,7 +1046,7 @@ function ReadingPageInner() {
                                         <div className="text-sm text-white/60 mb-1">
                                             {stuckWord.reason === 'silence' && "Looks like you paused — here's help with this word:"}
                                             {stuckWord.reason === 'reread' && "You've read this word multiple times — let me help:"}
-                                            {stuckWord.reason === 'mispronounced' && "Let me help you pronounce this word:"}
+                                            {stuckWord.reason === 'mispronounced' && "Let me help you pronounce this hard word. Any doubts?"}
                                         </div>
                                         <div className="flex items-baseline gap-4 flex-wrap">
                                             <span className="text-2xl font-bold text-yellow-300">

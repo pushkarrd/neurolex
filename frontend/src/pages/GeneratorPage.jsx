@@ -113,7 +113,10 @@ function GeneratorPageInner() {
                 if (response.status === 429) {
                     throw new Error('AI service is busy (rate limit). Please wait 1-2 minutes and try again.');
                 }
-                throw new Error('Content generation failed');
+                if (response.status === 500) {
+                    throw new Error('Server processing error. Generated content may be shown with fallback content. API will retry if you try again.');
+                }
+                throw new Error('Content generation failed. Please try again.');
             }
 
             const data = await response.json();
@@ -128,7 +131,7 @@ function GeneratorPageInner() {
                 });
             }
         } catch (err) {
-            setError(err.message || 'Failed to generate content.');
+            setError(err.message || 'Failed to generate content. Please try again or use shorter text.');
         } finally {
             setGenerating(false);
         }
