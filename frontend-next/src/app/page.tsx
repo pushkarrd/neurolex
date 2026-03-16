@@ -62,7 +62,7 @@ const teamMembers = [
     name: "Pushkar R Deshpande",
     role: "Team Lead and Frontend Developer",
     focus: "UI and Product Experience",
-    college: "3rd Sem EIE, BIT Bangalore",
+    college: "4th Sem EIE, BIT Bangalore",
     accent: "from-blue-500 to-cyan-500",
     linkedin:
       "https://www.linkedin.com/in/pushkar-r-deshpande-510177334?utm_source=share&utm_campaign=share_via&utm_content=profile&utm_medium=android_app",
@@ -73,12 +73,12 @@ const teamMembers = [
     name: "Hemsagar B C",
     role: "Backend Developer",
     focus: "Backend Systems and APIs",
-    college: "3rd Sem EIE, BIT Bangalore",
+    college: "4th Sem EIE, BIT Bangalore",
     accent: "from-emerald-500 to-teal-500",
     linkedin:
       "https://www.linkedin.com/in/hemsagar-b-c-b2610a318?utm_source=share&utm_campaign=share_via&utm_content=profile&utm_medium=android_app",
     instagram: "https://www.instagram.com/hemsagar_36?igsh=dWcxa3pteG5kcWdr",
-    github: "https://github.com/hemsagar-b-c",
+    github: "https://github.com/Hemsagar-BC",
   },
 ];
 
