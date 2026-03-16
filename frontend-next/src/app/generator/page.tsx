@@ -32,14 +32,13 @@ import {
     recordAdaptiveLevel, endGazeSession, getCurrentSessionSnapshot,
     recordWordRead, recordWordStruggle, recordFusionStats,
 } from '@/services/gazeAnalytics';
+import { getApiBaseUrl } from '@/lib/api';
 // Lip sync + fusion
 import LipSyncEngine from '@/services/LipSyncEngine';
 import FusionEngine from '@/services/FusionEngine';
 import { WordRegistryManager } from '@/utils/WordRegistry';
 
-
-
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || `${process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8001'}/api`;
+const API_BASE_URL = getApiBaseUrl();
 
 const TABS = [
     { id: 'notes', label: 'NeuroLex Notes', icon: FileText },

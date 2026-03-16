@@ -15,8 +15,9 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { logHandwritingUpload } from '@/services/progressService';
+import { getApiBaseUrl } from '@/lib/api';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
+const API_BASE_URL = getApiBaseUrl();
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50 MB
 
 export default function HandwritingPage() {
