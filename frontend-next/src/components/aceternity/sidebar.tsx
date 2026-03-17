@@ -87,7 +87,7 @@ export const DesktopSidebar = ({
   return (
     <motion.div
       className={cn(
-        "h-full px-4 py-4 hidden md:flex md:flex-col w-75 shrink-0",
+        "relative z-40 h-full px-4 py-4 hidden md:flex md:flex-col w-75 shrink-0",
         "glass border-r border-border",
         className
       )}
@@ -95,6 +95,8 @@ export const DesktopSidebar = ({
         width: animate ? (open ? "300px" : "68px") : "300px",
       }}
       transition={{ duration: 0.3, ease: "easeInOut" }}
+      onPointerEnter={() => setOpen(true)}
+      onPointerLeave={() => setOpen(false)}
       onMouseEnter={() => setOpen(true)}
       onMouseLeave={() => setOpen(false)}
       {...props}
