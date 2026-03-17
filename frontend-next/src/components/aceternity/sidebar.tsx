@@ -113,17 +113,6 @@ export const MobileSidebar = ({
   const pathname = usePathname();
 
   useEffect(() => {
-    if (!open) return;
-
-    const onScroll = () => {
-      setOpen(false);
-    };
-
-    window.addEventListener("scroll", onScroll, { passive: true, capture: true });
-    return () => window.removeEventListener("scroll", onScroll, true);
-  }, [open, setOpen]);
-
-  useEffect(() => {
     setOpen(false);
   }, [pathname, setOpen]);
 
