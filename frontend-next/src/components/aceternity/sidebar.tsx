@@ -69,11 +69,11 @@ export const Sidebar = ({
   );
 };
 
-export const SidebarBody = (props: React.ComponentProps<typeof motion.div>) => {
+export const SidebarBody = (props: React.ComponentProps<"div">) => {
   return (
     <>
       <DesktopSidebar {...props} />
-      <MobileSidebar {...(props as unknown as React.ComponentProps<"div">)} />
+      <MobileSidebar {...props} />
     </>
   );
 };
@@ -82,41 +82,28 @@ export const DesktopSidebar = ({
   className,
   children,
   ...props
-}: React.ComponentProps<typeof motion.div>) => {
+}: React.ComponentProps<"div">) => {
   const { open, setOpen, animate } = useSidebar();
 
-  const handleMouseEnter = () => {
-    setOpen(true);
-  };
-
-  const handleMouseMove = () => {
-    if (!open) {
-      setOpen(true);
-    }
-  };
-
-  const handleMouseLeave = () => {
-    setOpen(false);
-  };
+  useEffect(() => {
+    setOpen(animate ? false : true);
+  }, [animate, setOpen]);
 
   return (
-    <motion.div
+    <div
       className={cn(
         "relative z-40 h-full px-4 py-4 hidden md:flex md:flex-col shrink-0 overflow-hidden",
+        "transition-[width] duration-300 ease-in-out",
+        animate ? (open ? "w-80" : "w-18") : "w-80",
         "glass border-r border-border",
         className
       )}
-      animate={{
-        width: animate ? (open ? "320px" : "72px") : "320px",
-      }}
-      transition={{ duration: 0.3, ease: "easeInOut" }}
-      onMouseEnter={handleMouseEnter}
-      onMouseMove={handleMouseMove}
-      onMouseLeave={handleMouseLeave}
+      onMouseEnter={animate ? () => setOpen(true) : undefined}
+      onMouseLeave={animate ? () => setOpen(false) : undefined}
       {...props}
     >
       {children}
-    </motion.div>
+    </div>
   );
 };
 
