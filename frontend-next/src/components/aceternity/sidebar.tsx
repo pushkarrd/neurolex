@@ -84,44 +84,34 @@ export const DesktopSidebar = ({
   ...props
 }: React.ComponentProps<typeof motion.div>) => {
   const { open, setOpen, animate } = useSidebar();
-  const timeoutRef = React.useRef<NodeJS.Timeout | null>(null);
 
   const handleMouseEnter = () => {
-    if (timeoutRef.current) {
-      clearTimeout(timeoutRef.current);
-    }
     setOpen(true);
   };
 
-  const handleMouseLeave = () => {
-    if (timeoutRef.current) {
-      clearTimeout(timeoutRef.current);
+  const handleMouseMove = () => {
+    if (!open) {
+      setOpen(true);
     }
-    timeoutRef.current = setTimeout(() => {
-      setOpen(false);
-    }, 50);
   };
 
-  React.useEffect(() => {
-    return () => {
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current);
-      }
-    };
-  }, []);
+  const handleMouseLeave = () => {
+    setOpen(false);
+  };
 
   return (
     <motion.div
       className={cn(
-        "relative z-40 h-full px-4 py-4 hidden md:flex md:flex-col w-75 shrink-0",
+        "relative z-40 h-full px-4 py-4 hidden md:flex md:flex-col shrink-0 overflow-hidden",
         "glass border-r border-border",
         className
       )}
       animate={{
-        width: animate ? (open ? "300px" : "68px") : "300px",
+        width: animate ? (open ? "320px" : "72px") : "320px",
       }}
       transition={{ duration: 0.3, ease: "easeInOut" }}
       onMouseEnter={handleMouseEnter}
+      onMouseMove={handleMouseMove}
       onMouseLeave={handleMouseLeave}
       {...props}
     >
@@ -240,16 +230,11 @@ export const SidebarLink = ({
       {...props}
     >
       <span className="shrink-0">{link.icon}</span>
-      <motion.span
-        animate={{
-          display: animate ? (open ? "inline-block" : "none") : "inline-block",
-          opacity: animate ? (open ? 1 : 0) : 1,
-        }}
-        transition={{ duration: 0.2 }}
-        className="text-sm font-semibold whitespace-pre group-hover/sidebar:translate-x-1 transition duration-150"
-      >
-        {link.label}
-      </motion.span>
+      {(open || !animate) && (
+        <span className="text-sm font-semibold whitespace-nowrap group-hover/sidebar:translate-x-1 transition duration-150">
+          {link.label}
+        </span>
+      )}
     </Link>
   );
 };
