@@ -53,19 +53,15 @@ export default function AppSidebar() {
   const { currentUser, logout } = useAuth();
 
   return (
-    <Sidebar open={open} setOpen={setOpen} animate={true}>
+    <Sidebar open={open} setOpen={setOpen} animate={false}>
       <SidebarBody className="justify-between gap-10">
-        <div
-          className={`flex flex-col flex-1 overflow-x-hidden ${open ? "overflow-y-auto pr-1" : "overflow-y-hidden"}`}
-        >
+        <div className="flex flex-col flex-1 overflow-x-hidden overflow-y-auto pr-1">
           {/* Logo */}
           <Link href="/" className="flex items-center gap-2 py-1 mb-4">
             <div className="h-7 w-7 shrink-0 rounded-lg bg-linear-to-br from-violet-600 to-amber-500 flex items-center justify-center">
               <span className="text-white text-xs font-bold">S</span>
             </div>
-            {open && (
-              <span className="font-black text-lg whitespace-nowrap gradient-text">NeuroLex</span>
-            )}
+            <span className="font-black text-lg whitespace-nowrap gradient-text">NeuroLex</span>
           </Link>
 
           {/* Main links */}
@@ -80,13 +76,11 @@ export default function AppSidebar() {
           </div>
 
           {/* Features section */}
-          {open && (
-            <div className="mt-4 mb-1">
-              <span className="text-[10px] uppercase tracking-wider text-muted-foreground/60 font-semibold px-2">
-                Tools
-              </span>
-            </div>
-          )}
+          <div className="mt-4 mb-1">
+            <span className="text-[10px] uppercase tracking-wider text-muted-foreground/60 font-semibold px-2">
+              Tools
+            </span>
+          </div>
           <div className="flex flex-col gap-0.5">
             {featureLinks.map((link) => (
               <SidebarLink
@@ -118,11 +112,9 @@ export default function AppSidebar() {
               <span className="shrink-0">
                 {isDark ? <Sun size={20} /> : <Moon size={20} />}
               </span>
-              {open && (
-                <span className="text-sm font-semibold whitespace-nowrap">
-                  {isDark ? "Light Mode" : "Dark Mode"}
-                </span>
-              )}
+              <span className="text-sm font-semibold whitespace-nowrap">
+                {isDark ? "Light Mode" : "Dark Mode"}
+              </span>
             </button>
 
             {/* Auth */}
@@ -132,7 +124,7 @@ export default function AppSidebar() {
                 className="flex items-center justify-start gap-2 group/sidebar py-2 px-2 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors duration-200"
               >
                 <span className="shrink-0"><LogOut size={20} /></span>
-                {open && <span className="text-sm font-semibold whitespace-nowrap">Sign Out</span>}
+                <span className="text-sm font-semibold whitespace-nowrap">Sign Out</span>
               </button>
             ) : (
               <SidebarLink
@@ -147,11 +139,9 @@ export default function AppSidebar() {
                 <div className="h-7 w-7 shrink-0 rounded-full bg-linear-to-br from-violet-500 to-purple-500 flex items-center justify-center text-white text-xs font-bold">
                   {currentUser.email?.[0]?.toUpperCase() || "U"}
                 </div>
-                {open && (
-                  <span className="text-sm text-foreground truncate whitespace-nowrap">
-                    {currentUser.displayName || currentUser.email?.split("@")[0]}
-                  </span>
-                )}
+                <span className="text-sm text-foreground truncate whitespace-nowrap">
+                  {currentUser.displayName || currentUser.email?.split("@")[0]}
+                </span>
               </div>
             )}
           </div>

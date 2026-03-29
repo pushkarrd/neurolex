@@ -83,23 +83,14 @@ export const DesktopSidebar = ({
   children,
   ...props
 }: React.ComponentProps<"div">) => {
-  const { open, setOpen, animate } = useSidebar();
-
-  useEffect(() => {
-    setOpen(animate ? false : true);
-  }, [animate, setOpen]);
-
   return (
     <div
       className={cn(
         "relative z-40 h-full px-4 py-4 hidden md:flex md:flex-col shrink-0 overflow-hidden",
-        "transition-[width] duration-300 ease-in-out",
-        animate ? (open ? "w-80" : "w-18") : "w-80",
+        "w-80",
         "glass border-r border-border",
         className
       )}
-      onMouseEnter={animate ? () => setOpen(true) : undefined}
-      onMouseLeave={animate ? () => setOpen(false) : undefined}
       {...props}
     >
       {children}
@@ -198,7 +189,7 @@ export const SidebarLink = ({
   active?: boolean;
   props?: LinkProps;
 }) => {
-  const { open, setOpen, animate } = useSidebar();
+  const { setOpen } = useSidebar();
   return (
     <Link
       href={link.href}
@@ -217,11 +208,9 @@ export const SidebarLink = ({
       {...props}
     >
       <span className="shrink-0">{link.icon}</span>
-      {(open || !animate) && (
-        <span className="text-sm font-semibold whitespace-nowrap group-hover/sidebar:translate-x-1 transition duration-150">
-          {link.label}
-        </span>
-      )}
+      <span className="text-sm font-semibold whitespace-nowrap group-hover/sidebar:translate-x-1 transition duration-150">
+        {link.label}
+      </span>
     </Link>
   );
 };
